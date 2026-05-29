@@ -1,0 +1,35 @@
+@import "@heroui/react/styles";
+
+@layer theme {
+  :root,
+  .dark,
+  [data-theme="dark"] {
+    --background: #000000;
+    --foreground: #ffffff;
+    --surface: oklch(0.10 0.005 285);
+    --overlay: oklch(0.12 0.005 285);
+  }
+}
+
+@theme {
+  --color-fondo-dark: #000000;
+  --color-texto-light: #ffffff;
+  --color-acento-lima: #bdf61d;
+}
+
+@layer utilities {
+  .glass {
+    background-color: rgb(255 255 255 / 0.05);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgb(255 255 255 / 0.10);
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.2);
+  }
+}
+
+html,
+body {
+  background-color: #000000;
+  color: #ffffff;
+  min-height: 100%;
+}

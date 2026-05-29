@@ -1,0 +1,125 @@
+import { NextRequest, NextResponse } from "next/server";
+import { ContractType, Currency, PaymentStatus } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+
+type CreateContractBody = {
+  clientId: string;
+  softwareId: string;
+  type: ContractType;
+  totalAmount: number;
+  currency: Currency;
+  installmentsCount: number;
+  startDate: string;
+};
+
+export async function POST(req: NextRequest) {
+  try {
+    const body: CreateContractBody = await req.json();
+    const { clientId, softwareId, type, totalAmount, currency, installmentsCount, startDate } = body;
+
+    if (!clientId || !softwareId || !type || totalAmount === undefined || !currency || !startDate) {
+      return NextResponse.json({ error: "Faltan campos requeridos" }, { status: 400 });
+    }
+
+    if (!Object.values(ContractType).includes(type)) {
+      return NextResponse.json({ error: "Tipo de contrato inválido" }, { status: 400 });
+    }
+
+    if (!Object.values(Currency).includes(currency)) {
+      return NextResponse.json({ error: "Moneda inválida" }, { status: 400 });
+    }
+
+    if (type === ContractType.CUSTOM_DEVELOPMENT && (!installmentsCount || installmentsCount < 1)) {
+      return NextResponse.json(
+        { error: "installmentsCount es requerido para CUSTOM_DEVELOPMENT" },
+        { status: 400 }
+      );
+    }
+
+    const client = await prisma.client.findUnique({ where: { id: clientId } });
+    if (!client) {
+      return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
+    }
+
+    const software = await prisma.software.findUnique({ where: { id: softwareId } });
+    if (!software) {
+      return NextResponse.json({ error: "Software no encontrado" }, { status: 404 });
+    }
+
+    const start = new Date(startDate);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const contract = await tx.contract.create({
+        data: { clientId, softwareId, type, totalAmount, currency, startDate: start },
+      });
+
+      if (type === ContractType.CUSTOM_DEVELOPMENT) {
+        const installmentAmount = parseFloat((totalAmount / installmentsCount).toFixed(2));
+
+        const invoices = await Promise.all(
+          Array.from({ length: installmentsCount }, (_, i) =>
+            tx.invoice.create({
+              data: {
+                contractId: contract.id,
+                amount: installmentAmount,
+                dueDate: new Date(start.getTime() + i * 30 * 24 * 60 * 60 * 1000),
+                status: PaymentStatus.PENDING,
+                currency,
+                period: `Cuota ${i + 1}/${installmentsCount}`,
+              },
+            })
+          )
+        );
+
+        return { contract, invoices };
+      }
+
+      const period = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`;
+      const invoice = await tx.invoice.create({
+        data: {
+          contractId: contract.id,
+          amount: totalAmount,
+          dueDate: start,
+          status: PaymentStatus.PENDING,
+          currency,
+          period,
+        },
+      });
+
+      return { contract, invoices: [invoice] };
+    });
+
+    return NextResponse.json(result, { status: 201 });
+  } catch (error) {
+    console.error("[POST /api/contracts]", error);
+    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
+  }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = req.nextUrl;
+    const clientId = searchParams.get("clientId") ?? undefined;
+    const activeParam = searchParams.get("active");
+
+    const contracts = await prisma.contract.findMany({
+      where: {
+        ...(clientId ? { clientId } : {}),
+        ...(activeParam !== null ? { active: activeParam === "true" } : {}),
+      },
+      include: {
+        client: true,
+        software: true,
+        _count: {
+          select: { invoices: { where: { status: PaymentStatus.PENDING } } },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return NextResponse.json(contracts);
+  } catch (error) {
+    console.error("[GET /api/contracts]", error);
+    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
+  }
+}
