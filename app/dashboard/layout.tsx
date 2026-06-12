@@ -8,6 +8,8 @@ import {
   Users,
   Package,
   FileText,
+  FileSignature,
+  Wallet,
   Ticket,
   Bot,
   Menu,
@@ -22,8 +24,10 @@ import { Dropdown } from "@heroui/react/dropdown";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/clientes", label: "Clientes", icon: Users },
+  { href: "/dashboard/contratos", label: "Contratos", icon: FileSignature },
   { href: "/dashboard/softwares", label: "Softwares", icon: Package },
   { href: "/dashboard/facturacion", label: "Facturación", icon: FileText },
+  { href: "/dashboard/finanzas", label: "Finanzas", icon: Wallet },
   { href: "/dashboard/tickets", label: "Tickets", icon: Ticket },
   { href: "/dashboard/ia", label: "Chat IA", icon: Bot },
 ];
@@ -31,8 +35,10 @@ const navItems = [
 const sectionLabels: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/dashboard/clientes": "Clientes",
+  "/dashboard/contratos": "Contratos",
   "/dashboard/softwares": "Softwares",
   "/dashboard/facturacion": "Facturación",
+  "/dashboard/finanzas": "Finanzas",
   "/dashboard/tickets": "Tickets",
   "/dashboard/ia": "Chat IA",
 };
@@ -99,10 +105,9 @@ export default function DashboardLayout({
                 className={`
                   flex items-center gap-3 rounded-lg px-3 py-2.5
                   text-sm font-medium transition-colors
-                  ${
-                    active
-                      ? "bg-acento-lima/10 text-acento-lima"
-                      : "text-white/60 hover:bg-white/5 hover:text-white"
+                  ${active
+                    ? "bg-acento-lima/10 text-acento-lima"
+                    : "text-white/60 hover:bg-white/5 hover:text-white"
                   }
                 `}
               >
@@ -139,16 +144,14 @@ export default function DashboardLayout({
           {/* Right: user dropdown */}
           <Dropdown>
             <Dropdown.Trigger>
-              <button className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors">
-                <Avatar size="sm">
-                  <Avatar.Fallback className="bg-acento-lima/20 text-acento-lima text-xs font-bold">
-                    DS
-                  </Avatar.Fallback>
-                </Avatar>
+              <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors cursor-pointer">
+                <Avatar
+                  size="sm"
+                />
                 <span className="hidden sm:block text-sm text-white/80">
                   Admin
                 </span>
-              </button>
+              </div>
             </Dropdown.Trigger>
             <Dropdown.Popover>
               <Dropdown.Menu className="bg-black/90 border border-white/10 backdrop-blur-md min-w-40">

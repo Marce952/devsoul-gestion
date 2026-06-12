@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { Card } from "@heroui/react/card";
-import { Modal } from "@heroui/react/modal";
 import { Chip } from "@heroui/react/chip";
 import { Input } from "@heroui/react/input";
 import { Button } from "@heroui/react/button";
+import { Modal } from "@heroui/react";
 import { Pencil, Eye, Plus, Search, Users } from "lucide-react";
 
 type ClientRow = {
@@ -73,7 +73,7 @@ export default function ClientesPage() {
     try {
       const res = await fetch("/api/clients");
       const data = await res.json();
-      setClients(data);
+      setClients(Array.isArray(data) ? data : []);
     } finally {
       setLoading(false);
     }
@@ -229,80 +229,81 @@ export default function ClientesPage() {
       )}
 
       {/* Modal */}
-      <Modal.Root isOpen={modalOpen} onOpenChange={setModalOpen}>
-        <Modal.Backdrop isDismissable />
-        <Modal.Container placement="center" size="md">
-          <Modal.Dialog>
-            <Modal.Header className="px-6 pt-6 pb-0">
-              <Modal.Heading className="text-lg font-semibold text-white">
-                {editingClient ? "Editar Cliente" : "Nuevo Cliente"}
-              </Modal.Heading>
-            </Modal.Header>
-            <form onSubmit={handleSave}>
-              <Modal.Body className="px-6 py-4 space-y-3">
-                {formError && (
-                  <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-                    {formError}
-                  </p>
-                )}
-                <InputField
-                  label="Razón Social *"
-                  value={form.companyName}
-                  onChange={(v) => setField("companyName", v)}
-                />
-                <InputField
-                  label="Contacto *"
-                  value={form.contactName}
-                  onChange={(v) => setField("contactName", v)}
-                />
-                <InputField
-                  label="Email *"
-                  type="email"
-                  value={form.email}
-                  onChange={(v) => setField("email", v)}
-                />
-                <InputField
-                  label="Teléfono"
-                  value={form.phone}
-                  onChange={(v) => setField("phone", v)}
-                />
-                {editingClient && (
-                  <div className="flex items-center gap-3 pt-1">
-                    <span className="text-sm text-white/60">Estado</span>
-                    <button
-                      type="button"
-                      onClick={() => setField("status", !form.status)}
-                      className={`text-xs px-3 py-1 rounded-full border transition-colors ${
-                        form.status
-                          ? "border-green-500/50 text-green-400 bg-green-500/10"
-                          : "border-white/20 text-white/40 bg-white/5"
-                      }`}
-                    >
-                      {form.status ? "Activo" : "Inactivo"}
-                    </button>
-                  </div>
-                )}
-              </Modal.Body>
-              <Modal.Footer className="px-6 pb-6 pt-2 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="text-sm text-white/50 hover:text-white px-4 py-2 rounded-lg hover:bg-white/5 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <Button
-                  type="submit"
-                  isDisabled={saving}
-                  className="bg-acento-lima text-black text-sm font-medium px-5 rounded-lg"
-                >
-                  {saving ? "Guardando..." : "Guardar"}
-                </Button>
-              </Modal.Footer>
-            </form>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Root>
+      <Modal isOpen={modalOpen} onOpenChange={setModalOpen}>
+        <Modal.Backdrop>
+          <Modal.Container>
+            <Modal.Dialog>
+              <Modal.CloseTrigger />
+              <Modal.Header className="px-6 pt-6 pb-0">
+                <Modal.Heading className="text-lg font-semibold text-white">
+                  {editingClient ? "Editar Cliente" : "Nuevo Cliente"}
+                </Modal.Heading>
+              </Modal.Header>
+              <form onSubmit={handleSave}>
+                <Modal.Body className="px-6 py-4 space-y-3">
+                  {formError && (
+                    <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                      {formError}
+                    </p>
+                  )}
+                  <InputField
+                    label="Razón Social *"
+                    value={form.companyName}
+                    onChange={(v) => setField("companyName", v)}
+                  />
+                  <InputField
+                    label="Contacto *"
+                    value={form.contactName}
+                    onChange={(v) => setField("contactName", v)}
+                  />
+                  <InputField
+                    label="Email *"
+                    type="email"
+                    value={form.email}
+                    onChange={(v) => setField("email", v)}
+                  />
+                  <InputField
+                    label="Teléfono"
+                    value={form.phone}
+                    onChange={(v) => setField("phone", v)}
+                  />
+                  {editingClient && (
+                    <div className="flex items-center gap-3 pt-1">
+                      <span className="text-sm text-white/60">Estado</span>
+                      <button
+                        type="button"
+                        onClick={() => setField("status", !form.status)}
+                        className={`text-xs px-3 py-1 rounded-full border transition-colors ${form.status
+                            ? "border-green-500/50 text-green-400 bg-green-500/10"
+                            : "border-white/20 text-white/40 bg-white/5"
+                          }`}
+                      >
+                        {form.status ? "Activo" : "Inactivo"}
+                      </button>
+                    </div>
+                  )}
+                </Modal.Body>
+                <Modal.Footer className="px-6 pb-6 pt-2 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setModalOpen(false)}
+                    className="text-sm text-white/50 hover:text-white px-4 py-2 rounded-lg hover:bg-white/5 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <Button
+                    type="submit"
+                    isDisabled={saving}
+                    className="bg-acento-lima text-black text-sm font-medium px-5 rounded-lg"
+                  >
+                    {saving ? "Guardando..." : "Guardar"}
+                  </Button>
+                </Modal.Footer>
+              </form>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
     </div>
   );
 }

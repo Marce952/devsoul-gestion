@@ -47,6 +47,8 @@ export async function POST(req: NextRequest) {
     }
 
     const start = new Date(startDate);
+    const monthPeriod = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
     const result = await prisma.$transaction(async (tx) => {
       const contract = await tx.contract.create({
@@ -57,24 +59,29 @@ export async function POST(req: NextRequest) {
         const installmentAmount = parseFloat((totalAmount / installmentsCount).toFixed(2));
 
         const invoices = await Promise.all(
-          Array.from({ length: installmentsCount }, (_, i) =>
-            tx.invoice.create({
+          Array.from({ length: installmentsCount }, (_, i) => {
+            const dueDate = new Date(
+              start.getFullYear(),
+              start.getMonth() + i,
+              start.getDate()
+            );
+            return tx.invoice.create({
               data: {
                 contractId: contract.id,
                 amount: installmentAmount,
-                dueDate: new Date(start.getTime() + i * 30 * 24 * 60 * 60 * 1000),
+                dueDate,
                 status: PaymentStatus.PENDING,
                 currency,
-                period: `Cuota ${i + 1}/${installmentsCount}`,
+                period: monthPeriod(dueDate),
               },
-            })
-          )
+            });
+          })
         );
 
         return { contract, invoices };
       }
 
-      const period = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`;
+      const period = monthPeriod(start);
       const invoice = await tx.invoice.create({
         data: {
           contractId: contract.id,
