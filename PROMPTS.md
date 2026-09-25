@@ -97,7 +97,7 @@ Implementá autenticación con email y contraseña sobre el modelo User existent
 ### P2.1: Cuentas financieras, categorías y saldos
 - **Estado:** [x]
 - **Depende de:** P0.1
-- **Fecha:** 25/09/2026 · **Commit:** (pendiente) · **Notas:** Migración `20260925180000_finance_accounts_categories_rates`, escrita a mano porque migra datos.
+- **Fecha:** 25/09/2026 · **Commit:** `d1fcdaa` · **Notas:** Migración `20260925180000_finance_accounts_categories_rates`, escrita a mano porque migra datos.
   - Los movimientos existentes pasaron a "Ualá ARS". Las categorías se crearon a partir del texto que tenían, y los cobros automáticos quedaron vinculados a su factura.
   - Transferencias: no hay un modelo aparte. Se agregaron los tipos `TRANSFER_IN` y `TRANSFER_OUT`, y las dos patas comparten `transferGroupId`. No cuentan como ingreso ni egreso y admiten monedas distintas (compra de USD).
   - APIs nuevas:
@@ -128,7 +128,7 @@ Verificá con build y lint.
 ### P2.2: Tipo de cambio USD
 - **Estado:** [x]
 - **Depende de:** P2.1
-- **Fecha:** 25/09/2026 · **Commit:** (pendiente) · **Notas:**
+- **Fecha:** 25/09/2026 · **Commit:** `d1fcdaa` · **Notas:**
   - Modelo `ExchangeRate`, único por (currency, date).
   - `getRateToArs` en `lib/finance/rates.ts` resuelve en este orden:
     1. La base de datos.
