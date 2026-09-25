@@ -192,7 +192,7 @@ Leé la documentación de https://developers.ualabis.com.ar (API Cobros Online v
 ### P4.1: Facturación recurrente automática
 - **Estado:** [x]
 - **Depende de:** P0.1
-- **Fecha:** 25/09/2026 · **Commit:** (pendiente) · **Notas:** Deploy decidido: Vercel. Migración `20260925200000_recurring_invoices_reminders`.
+- **Fecha:** 25/09/2026 · **Commit:** `8e734dc` · **Notas:** Deploy decidido: Vercel. Migración `20260925200000_recurring_invoices_reminders`.
   - Idempotencia: no hay `@@unique([contractId, period])`, porque impediría cargar a mano una factura extra en el mismo mes. En su lugar, `Invoice.recurringKey` (`contractId:period`) es único, y el generador omite los contratos que ya tienen cualquier factura en ese período.
   - `lib/billing/recurring.ts` incluye contratos SAAS_SUBSCRIPTION y MAINTENANCE activos, no archivados, iniciados antes de fin de mes y sin `endDate` anterior al período. El monto es `totalAmount`, que es la cuota mensual.
   - El vencimiento es el día `INVOICE_DUE_DAY` (10 por defecto). Si la generación corre después de ese día, la factura vence a hoy + 7 días, para no nacer vencida.
@@ -217,7 +217,7 @@ Si P3.2 ya está hecho, generar el link de pago de Ualá Bis automáticamente.
 ### P4.2: Recordatorios de vencimiento
 - **Estado:** [x]
 - **Depende de:** P4.1
-- **Fecha:** 25/09/2026 · **Commit:** (pendiente) · **Notas:** Proveedor decidido: Resend, con `fetch` directo y sin SDK.
+- **Fecha:** 25/09/2026 · **Commit:** `8e734dc` · **Notas:** Proveedor decidido: Resend, con `fetch` directo y sin SDK.
   - `ReminderLog` es único por (invoiceId, kind, channel) y guarda estado, reintentos y el id del proveedor.
   - Tipos de recordatorio:
     - `BEFORE_DUE`: desde `REMINDER_DAYS_BEFORE` (3) días antes del vencimiento.
