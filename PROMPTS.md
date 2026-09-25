@@ -1,0 +1,284 @@
+# Hoja de ruta con prompts: Devsoul Gestión
+
+Este archivo es el backlog vivo del sistema. Cada bloque trae un prompt listo para pegar en una sesión nueva de Claude Code.
+
+## Cómo usarlo en cada sesión
+
+1. Empezar la sesión con: `Leé CLAUDE.md y PROMPTS.md y continuá con el próximo prompt pendiente.`
+2. Los prompts se ejecutan en orden, porque cada uno puede depender de los anteriores (se indica en **Depende de**).
+3. Al terminar un prompt:
+   - Cambiar su estado a `[x]` y completar **Fecha** y **Commit**.
+   - Anotar en **Notas** cualquier decisión tomada o algo que haya quedado a medias.
+   - Si surge trabajo nuevo, agregarlo como prompt al final de la sección que corresponda.
+4. Estados: `[ ]` pendiente · `[~]` en curso o parcial · `[x]` terminado · `[-]` descartado.
+
+---
+
+## Ya implementado (base al 25/09/2026)
+
+- [x] Scaffold de Next.js 16 con App Router, Tailwind 4, HeroUI, Prisma 6 y PostgreSQL. Commit `4986e68`.
+- [x] Schema de Prisma: `User`, `Client`, `Software`, `Contract`, `Invoice`, `Transaction` y `Ticket`, más la migración `init`.
+- [x] CRUD por API y pantallas de clientes, softwares, contratos, facturación, tickets y finanzas. Commit `2898806`.
+- [x] Al marcar una factura como `PAID` se crea automáticamente una `Transaction` de tipo `INCOME` (`app/api/invoices/[id]/route.ts`).
+- [x] Dashboard con métricas (`/api/dashboard/metrics`).
+- [x] Chat de IA con resumen financiero inyectado: ingresos y egresos del mes, pendientes y top 3 de softwares (`/api/ia/chat`, con OpenAI a través del AI SDK).
+
+---
+
+## Fase 0: Cimientos de datos
+
+### P0.1: Índices, soft-delete y protección contable
+- **Estado:** [x]
+- **Depende de:** nada
+- **Fecha:** 25/09/2026 · **Commit:** (pendiente) · **Notas:** Migración `20260925150353_soft_delete_indexes_restrict`.
+  - Todas las FKs pasaron a `Restrict`, así que la base rechaza el borrado físico de un registro que tenga dependencias.
+  - `DELETE` de clientes y softwares hace soft-delete, pero responde 409 si tienen contratos activos.
+  - Nuevo `DELETE /api/contracts/[id]`: responde 409 si el contrato tiene facturas `PENDING`.
+  - Los GET y las validaciones de creación ignoran los registros archivados.
+  - Botón "Archivar", con doble confirmación, en el modal de edición de clientes y softwares. Contratos: solo por API, porque la UI ya tiene activar/desactivar.
+  - Lint: quedan 2 errores preexistentes de `react-hooks/set-state-in-effect` en `facturacion` y `finanzas`, sin tocar.
+
+```
+Leé CLAUDE.md y prisma/schema.prisma. Quiero proteger el historial contable:
+1. Reemplazá onDelete: Cascade de Contract→Client, Contract→Software, Invoice→Contract, Ticket→Client y Ticket→Software por Restrict.
+2. Agregá soft-delete (deletedAt DateTime?) a Client, Software y Contract. Los DELETE de la API tienen que hacer soft-delete y los GET tienen que excluir los borrados por defecto.
+3. Agregá @@index en todas las FKs y en Invoice.status, Invoice.dueDate, Invoice.period, Ticket.status y Transaction.date.
+4. Generá la migración con prisma migrate dev y ajustá las pantallas que borran para que muestren "Archivar".
+Verificá con npm run build y npm run lint.
+```
+
+### P0.2: Seed inicial
+- **Estado:** [~]
+- **Depende de:** P0.1
+- **Fecha:** 25/09/2026 · **Commit:** (pendiente) · **Notas:**
+  - `prisma/seed.ts` se ejecuta con tsx, configurado en `prisma.config.ts`, y crea 2 OWNER: Marce (garridomarcex@gmail.com) y Lautaro (lautarooyt837@gmail.com).
+  - Las contraseñas salen de `SEED_PASSWORD_MARCE` y `SEED_PASSWORD_LAUTARO`. Si un usuario ya existe, el seed no pisa su contraseña.
+  - Falta: categorías de transacciones y cuenta "Ualá ARS". Se suman al seed cuando exista el modelo de P2.1.
+  - Falta que los socios carguen sus contraseñas en `.env` y ejecuten `npx prisma db seed`.
+
+```
+Creá prisma/seed.ts (con tsx) y configuralo en package.json o prisma.config.ts. Tiene que cargar:
+- Los 3 socios como User (rol OWNER, uno además FINANCIAL si P1.1 ya separa los permisos) con contraseña hasheada a partir de variables de entorno SEED_*.
+- Las categorías base de transacciones (ver P2.1 si ya existe el modelo): Sueldos, Infraestructura, Impuestos, Herramientas/SaaS, Comisiones bancarias, Cobro de factura, Otros.
+- La cuenta financiera "Ualá ARS" (si P2.1 ya existe).
+Tiene que ser idempotente (upsert). Documentá el comando en README.md.
+```
+
+---
+
+## Fase 1: Autenticación y roles
+
+### P1.1: Login con roles
+- **Estado:** [x]
+- **Depende de:** P0.2
+- **Fecha:** 25/09/2026 · **Commit:** (pendiente) · **Notas:**
+  - Sesión stateless: JWT HS256 con `jose` en la cookie httpOnly `devsoul_session`, válida por 7 días. Las contraseñas se hashean con `bcryptjs` (costo 12).
+  - `proxy.ts` (el middleware de Next 16) protege todo salvo `/login`, `/api/auth/*` y `/api/webhooks/*`: la API responde 401 y las páginas redirigen a `/login?from=`.
+  - `lib/auth/session.ts` expone `getSession`, `getCurrentUser`, `requireUser` y `requireRole(roles)`. `FINANCIAL_ROLES` (OWNER y FINANCIAL) protege `PATCH /api/invoices/[id]` y `POST /api/transactions`.
+  - Login, logout y cambio de contraseña son server actions en `app/actions/auth.ts`. El perfil quedó en `/dashboard/perfil` y no en `/perfil`, para reutilizar el layout.
+  - `app/dashboard/layout.tsx` es un server component que carga el usuario. El shell cliente pasó a `dashboard-shell.tsx`.
+  - Probado con curl: redirecciones, 401, 403 para MANAGER, token adulterado rechazado, redirect abierto bloqueado. El logout desde el menú no se probó en el navegador.
+  - Pendiente para después: rate-limit del login y ocultar en la UI las acciones que el rol no puede ejecutar.
+
+```
+Leé CLAUDE.md, AGENTS.md y la documentación de Next 16 en node_modules/next/dist/docs/ (middleware/proxy, cookies y server actions) antes de escribir código.
+Implementá autenticación con email y contraseña sobre el modelo User existente:
+- Hash con bcrypt o argon2 y sesión con cookie httpOnly firmada (JWT con jose, o Auth.js si es compatible con Next 16; justificá la elección).
+- Página /login con estética glassmorphism, mobile-first y acento #bdf61d.
+- Protección de /dashboard/** y /api/** (salvo /api/auth/** y webhooks) mediante middleware o proxy.
+- Rutas /perfil (ver datos y cambiar contraseña) y /auth/logout, que ya están linkeadas desde app/dashboard/layout.tsx.
+- Helper requireRole(roles[]) para route handlers. Solo FINANCIAL u OWNER pueden marcar facturas como PAID y registrar movimientos.
+```
+
+---
+
+## Fase 2: Registro contable (núcleo del pedido)
+
+### P2.1: Cuentas financieras, categorías y saldos
+- **Estado:** [ ]
+- **Depende de:** P0.1
+- **Fecha:** · **Commit:** · **Notas:**
+
+```
+Quiero un registro contable real de dónde está el dinero de Devsoul (hoy todo está en Ualá).
+Modelá en Prisma:
+- FinancialAccount: name, provider (UALA, CASH, BANK, OTHER), currency, openingBalance, openingDate y active.
+- TransactionCategory: name, type (INCOME/EXPENSE) y active. Migrá el string Transaction.category a una FK, conservando los datos.
+- Transaction: sumá accountId (obligatorio), invoiceId? (vínculo con la factura cobrada), externalId? @unique (id del movimiento en Ualá, para deduplicar), source (MANUAL, INVOICE, UALA_IMPORT, UALA_WEBHOOK), reconciled Boolean y createdById?.
+- Transferencias entre cuentas: TransferGroup, o dos transacciones enlazadas que no cuenten como ingreso ni egreso.
+Actualizá el flujo de "marcar factura PAID" para que pida la cuenta de destino y enlace invoiceId.
+Pantalla /dashboard/finanzas: saldo actual por cuenta (apertura + movimientos), filtros por cuenta, categoría y mes, y resultado neto mensual.
+Verificá con build y lint.
+```
+
+### P2.2: Tipo de cambio USD
+- **Estado:** [ ]
+- **Depende de:** P2.1
+- **Fecha:** · **Commit:** · **Notas:**
+
+```
+Agregá el modelo ExchangeRate (date, currency, rateToArs y source: MANUAL o API) y guardá en cada Transaction e Invoice en USD el rateToArs usado.
+Creá una función getRate(date) que tome la cotización del día (API pública del dólar oficial o MEP; proponé cuál y dejala configurable) con fallback manual.
+Todos los reportes y el resumen de la IA tienen que consolidar en ARS.
+```
+
+---
+
+## Fase 3: Integración con Ualá
+
+> **Contexto:** Ualá no ofrece una API pública para leer los movimientos de una cuenta personal. Hay dos vías reales:
+> 1. **Importar el extracto o los movimientos** que se exportan desde la app (P3.1). Sirve para cualquier movimiento: gastos, transferencias y cobros.
+> 2. **Ualá Bis, API Cobros Online** (https://developers.ualabis.com.ar): genera links de pago por factura y notifica el cobro por webhook (P3.2). Solo cubre los cobros hechos a través de Ualá Bis; no permite leer el resto de la cuenta.
+> Con las dos juntas se logra que los cobros se concilien solos y que el resto de la cuenta se cargue mediante importación periódica.
+
+### P3.1: Importador de extracto de Ualá y conciliación
+- **Estado:** [ ]
+- **Depende de:** P2.1
+- **Fecha:** · **Commit:** · **Notas:**
+
+```
+Voy a darte un archivo de ejemplo con movimientos exportados de Ualá (ruta: ____). Primero analizá su formato (CSV, XLSX o PDF) y confirmame las columnas antes de codificar.
+Después implementá:
+- Un endpoint POST /api/import/uala (multipart) con un parser para ese formato: fecha, descripción, monto con signo, saldo e id o referencia si existe.
+- Deduplicación por externalId (o por un hash de fecha+monto+descripción si no hay id).
+- Una pantalla /dashboard/finanzas/importar: subir el archivo, previsualizar en tabla, autocategorizar con reglas (modelo CategoryRule: patrón de texto → categoría, editable) y confirmar.
+- Conciliación automática: si un ingreso coincide en monto (±1%) y fecha (±7 días) con una Invoice PENDING, sugerir el match. Al confirmar, marcar la factura como PAID, enlazar invoiceId y marcar reconciled=true.
+- Validar que el saldo final del extracto coincida con el saldo calculado de la cuenta y mostrar la diferencia si no coincide.
+```
+
+### P3.2: Cobros con Ualá Bis (links de pago y webhook)
+- **Estado:** [ ]
+- **Depende de:** P2.1, P1.1
+- **Fecha:** · **Commit:** · **Notas:**
+
+```
+Leé la documentación de https://developers.ualabis.com.ar (API Cobros Online v2 y su SDK de Node) antes de codificar.
+- Variables de entorno: UALA_BIS_USERNAME, UALA_BIS_CLIENT_ID, UALA_BIS_CLIENT_SECRET y UALA_BIS_ENV (stage/prod). Documentalas en README.md sin valores.
+- Botón "Generar link de pago" en cada factura PENDING. Guardar en Invoice los campos paymentLinkUrl, paymentProviderOrderId y paymentLinkCreatedAt.
+- Webhook POST /api/webhooks/uala-bis: validar el origen según la documentación, buscar la orden, marcar la factura PAID de forma idempotente y crear la Transaction (source UALA_BIS_WEBHOOK, cuenta Ualá, externalId = id de la orden, con la comisión registrada como EXPENSE aparte si la API la informa).
+- Job de respaldo que consulte las órdenes pendientes por si un webhook no llegó.
+- Probar primero contra el entorno stage.
+```
+
+---
+
+## Fase 4: Automatización
+
+### P4.1: Facturación recurrente automática
+- **Estado:** [ ]
+- **Depende de:** P0.1
+- **Fecha:** · **Commit:** · **Notas:**
+
+```
+Creá un job que el día 1 de cada mes genere las Invoice PENDING de cada Contract activo de tipo SAAS_SUBSCRIPTION o MAINTENANCE para el período YYYY-MM:
+- Idempotente, con @@unique([contractId, period]).
+- dueDate configurable (por ejemplo, día 10).
+- Respetar startDate y endDate del contrato.
+- Endpoint /api/cron/invoices protegido con CRON_SECRET.
+- Preguntame dónde se despliega (Vercel Cron, cron del servidor, etc.) antes de configurar el scheduler.
+- Botón manual "Generar facturas del mes" para OWNER.
+Si P3.2 ya está hecho, generar el link de pago de Ualá Bis automáticamente.
+```
+
+### P4.2: Recordatorios de vencimiento
+- **Estado:** [ ]
+- **Depende de:** P4.1
+- **Fecha:** · **Commit:** · **Notas:**
+
+```
+Enviar recordatorios por email (Resend o SMTP; proponé uno) 3 días antes del vencimiento, el día del vencimiento y 7 días después, incluyendo el link de pago si existe.
+- Registrar los envíos en un modelo ReminderLog para no duplicarlos.
+- Plantilla HTML con la marca Devsoul.
+- Dejar preparada una interfaz para sumar WhatsApp más adelante.
+- Ejecutarlo desde el mismo sistema de cron que P4.1.
+```
+
+---
+
+## Fase 5: Operación y trazabilidad
+
+### P5.1: Tickets con responsable e historial
+- **Estado:** [ ]
+- **Depende de:** P1.1
+- **Fecha:** · **Commit:** · **Notas:**
+
+```
+Extendé Ticket con assignedToId (User), resolvedAt (se completa al pasar a RESOLVED) y el modelo TicketComment (autor, texto, fecha).
+UI: asignar responsable, timeline de comentarios, filtro "mis tickets" y tiempo promedio de resolución.
+```
+
+### P5.2: Auditoría
+- **Estado:** [ ]
+- **Depende de:** P1.1
+- **Fecha:** · **Commit:** · **Notas:**
+
+```
+Modelo AuditLog (userId, action, entity, entityId, diff JSON y createdAt).
+Registrar: factura marcada como PAID o revertida, cambios de contrato, resolución de tickets, importaciones de Ualá y movimientos manuales.
+Pantalla /dashboard/auditoria, solo para OWNER, con filtros.
+```
+
+### P5.3: Exportes para el contador
+- **Estado:** [ ]
+- **Depende de:** P2.1
+- **Fecha:** · **Commit:** · **Notas:**
+
+```
+Exportar a CSV y PDF, por período:
+- Facturación (emitidas y cobradas).
+- Libro de movimientos por cuenta.
+- Resultado mensual por categoría.
+Botones en facturación y finanzas.
+```
+
+---
+
+## Fase 6: Inteligencia y crecimiento
+
+### P6.1: Dashboard financiero ejecutivo
+- **Estado:** [ ]
+- **Depende de:** P2.1, P2.2
+- **Fecha:** · **Commit:** · **Notas:**
+
+```
+Agregá al dashboard:
+- MRR y ARR a partir de los contratos recurrentes activos.
+- Morosidad (facturas vencidas, con monto y antigüedad).
+- Proyección de cobros a 90 días.
+- Saldo por cuenta.
+- Burn rate y runway (saldo / egreso promedio de 3 meses).
+- Comparativa mes a mes con Recharts.
+Todo consolidado en ARS y mobile-first.
+```
+
+### P6.2: Fidelización de clientes
+- **Estado:** [ ]
+- **Depende de:** P5.1
+- **Fecha:** · **Commit:** · **Notas:**
+
+```
+Agregá a Client lastContactAt y el modelo ClientInteraction (tipo, nota, fecha, usuario).
+- Encuesta NPS post-ticket con un link público firmado y el modelo NpsResponse.
+- Alertas de renovaciones próximas (contratos con endDate a menos de 60 días).
+- Health score por cliente: morosidad + tickets abiertos + NPS + días sin contacto.
+```
+
+### P6.3: IA con contexto completo
+- **Estado:** [ ]
+- **Depende de:** P6.1
+- **Fecha:** · **Commit:** · **Notas:**
+
+```
+Ampliá el resumen que se inyecta en /api/ia/chat con:
+- Saldos por cuenta, MRR, morosidad por cliente, tickets abiertos por cliente, health score, runway y la proyección a 90 días.
+- Tools (function calling del AI SDK) para que la IA consulte datos puntuales (un cliente, un período) en lugar de recibir todo en el prompt.
+- Solo lectura: la IA no modifica datos.
+```
+
+---
+
+## Backlog de ideas (sin prompt todavía)
+
+- Integración con AFIP/ARCA para facturación electrónica.
+- PWA instalable en el celular.
+- Presupuesto mensual por categoría con alertas.

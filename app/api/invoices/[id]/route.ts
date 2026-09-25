@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PaymentStatus, TransactionType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { FINANCIAL_ROLES, requireRole } from "@/lib/auth/session";
 
 export async function PATCH(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireRole(FINANCIAL_ROLES);
+    if (!auth.ok) return auth.response;
+
     const { id } = await params;
 
     const invoice = await prisma.invoice.findUnique({ where: { id } });

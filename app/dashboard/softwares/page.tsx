@@ -5,7 +5,7 @@ import { Card } from "@heroui/react/card";
 import { Modal } from "@heroui/react";
 import { Input } from "@heroui/react/input";
 import { Button } from "@heroui/react/button";
-import { Layers, Code2, Pencil, Plus, Package } from "lucide-react";
+import { Archive, Layers, Code2, Pencil, Plus, Package } from "lucide-react";
 
 type SoftwareRow = {
   id: string;
@@ -72,6 +72,7 @@ export default function SoftwaresPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [confirmArchive, setConfirmArchive] = useState(false);
 
   const load = async () => {
     try {
@@ -94,6 +95,7 @@ export default function SoftwaresPage() {
     setEditing(null);
     setForm(EMPTY_FORM);
     setFormError(null);
+    setConfirmArchive(false);
     setModalOpen(true);
   };
 
@@ -106,6 +108,7 @@ export default function SoftwaresPage() {
       basePrice: s.basePrice,
     });
     setFormError(null);
+    setConfirmArchive(false);
     setModalOpen(true);
   };
 
@@ -136,6 +139,29 @@ export default function SoftwaresPage() {
       if (!res.ok) {
         const data = await res.json();
         setFormError(data.error ?? "Error al guardar.");
+        return;
+      }
+      setModalOpen(false);
+      load();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleArchive = async () => {
+    if (!editing) return;
+    if (!confirmArchive) {
+      setConfirmArchive(true);
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    try {
+      const res = await fetch(`/api/softwares/${editing.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json();
+        setFormError(data.error ?? "Error al archivar.");
+        setConfirmArchive(false);
         return;
       }
       setModalOpen(false);
@@ -299,7 +325,21 @@ export default function SoftwaresPage() {
                   </div>
                 </div>
               </Modal.Body>
-              <Modal.Footer className="px-6 pb-6 pt-2 flex justify-end gap-2">
+              <Modal.Footer className="px-6 pb-6 pt-2 flex items-center justify-end gap-2">
+                {editing && (
+                  <button
+                    type="button"
+                    onClick={handleArchive}
+                    disabled={saving}
+                    className={`mr-auto flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg transition-colors ${confirmArchive
+                        ? "text-red-400 bg-red-500/10 border border-red-500/30"
+                        : "text-white/40 hover:text-red-400 hover:bg-white/5"
+                      }`}
+                  >
+                    <Archive size={14} />
+                    {confirmArchive ? "¿Confirmar?" : "Archivar"}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}

@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Moneda inválida" }, { status: 400 });
     }
 
-    const contract = await prisma.contract.findUnique({ where: { id: contractId } });
+    const contract = await prisma.contract.findFirst({ where: { id: contractId, deletedAt: null } });
     if (!contract) {
       return NextResponse.json({ error: "Contrato no encontrado" }, { status: 404 });
     }

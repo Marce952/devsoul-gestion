@@ -1,36 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Devsoul Gestión
 
-## Getting Started
+Sistema de gestión interna de Devsoul: clientes, softwares, contratos, facturación, finanzas, tickets e IA.
 
-First, run the development server:
+## Puesta en marcha
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. Instalar dependencias:
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+   ```bash
+   npm install
+   ```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+2. Copiar `.env.example` a `.env` y completar:
+   - `DATABASE_URL`: la conexión a PostgreSQL.
+   - `SESSION_SECRET`: 32 caracteres o más, para firmar la cookie de sesión.
+   - `SEED_PASSWORD_MARCE` y `SEED_PASSWORD_LAUTARO`: contraseñas iniciales de los socios, de 8 caracteres o más.
+   - `OPENAI_API_KEY`: para el chat de IA.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. Aplicar las migraciones y cargar los datos iniciales:
 
-## Learn More
+   ```bash
+   npx prisma migrate deploy
+   npx prisma db seed
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+   El seed es idempotente. Si un usuario ya existe, solo actualiza su nombre y rol; nunca pisa la contraseña. Después del primer login, cada socio puede cambiar su contraseña en **Perfil**.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+4. Levantar el entorno de desarrollo:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+   ```bash
+   npm run dev
+   ```
 
-## Deploy on Vercel
+   Abrir [http://localhost:3000](http://localhost:3000). Sin sesión, redirige a `/login`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Roles
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Rol | Permisos |
+| --- | --- |
+| `OWNER` | Acceso total. |
+| `FINANCIAL` | Puede marcar facturas como cobradas y registrar movimientos. |
+| `MANAGER` | Acceso operativo. No puede marcar facturas como cobradas ni registrar movimientos. |
+
+## Hoja de ruta
+
+Ver `PROMPTS.md`.

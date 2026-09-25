@@ -18,7 +18,7 @@ export async function PUT(
     const { id } = await params;
     const body: UpdateClientBody = await req.json();
 
-    const existing = await prisma.client.findUnique({ where: { id } });
+    const existing = await prisma.client.findFirst({ where: { id, deletedAt: null } });
     if (!existing) {
       return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
     }
@@ -51,12 +51,22 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    const existing = await prisma.client.findUnique({ where: { id } });
+    const existing = await prisma.client.findFirst({ where: { id, deletedAt: null } });
     if (!existing) {
       return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
     }
 
-    await prisma.client.update({ where: { id }, data: { status: false } });
+    const activeContracts = await prisma.contract.count({
+      where: { clientId: id, active: true, deletedAt: null },
+    });
+    if (activeContracts > 0) {
+      return NextResponse.json(
+        { error: "El cliente tiene contratos activos. Finalizalos antes de archivarlo." },
+        { status: 409 }
+      );
+    }
+
+    await prisma.client.update({ where: { id }, data: { status: false, deletedAt: new Date() } });
 
     return new NextResponse(null, { status: 204 });
   } catch (error) {

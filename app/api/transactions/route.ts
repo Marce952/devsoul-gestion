@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Currency, TransactionType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { FINANCIAL_ROLES, requireRole } from "@/lib/auth/session";
 
 type CreateTransactionBody = {
   type: TransactionType;
@@ -66,6 +67,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireRole(FINANCIAL_ROLES);
+    if (!auth.ok) return auth.response;
+
     const body: CreateTransactionBody = await req.json();
     const { type, category, amount, currency, description, date } = body;
 

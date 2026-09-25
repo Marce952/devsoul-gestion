@@ -21,7 +21,7 @@ export async function GET() {
           _sum: { amount: true },
           where: { status: PaymentStatus.PENDING, dueDate: { gte: startOfMonth, lte: endOfMonth } },
         }),
-        prisma.client.count({ where: { status: true } }),
+        prisma.client.count({ where: { status: true, deletedAt: null } }),
         prisma.ticket.count({ where: { status: TicketStatus.OPEN } }),
         prisma.invoice.findMany({
           where: { dueDate: { gte: sixMonthsAgo } },

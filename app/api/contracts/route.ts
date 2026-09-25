@@ -36,12 +36,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const client = await prisma.client.findUnique({ where: { id: clientId } });
+    const client = await prisma.client.findFirst({ where: { id: clientId, deletedAt: null } });
     if (!client) {
       return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
     }
 
-    const software = await prisma.software.findUnique({ where: { id: softwareId } });
+    const software = await prisma.software.findFirst({ where: { id: softwareId, deletedAt: null } });
     if (!software) {
       return NextResponse.json({ error: "Software no encontrado" }, { status: 404 });
     }
@@ -111,6 +111,7 @@ export async function GET(req: NextRequest) {
 
     const contracts = await prisma.contract.findMany({
       where: {
+        deletedAt: null,
         ...(clientId ? { clientId } : {}),
         ...(activeParam !== null ? { active: activeParam === "true" } : {}),
       },

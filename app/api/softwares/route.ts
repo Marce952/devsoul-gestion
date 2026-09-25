@@ -15,9 +15,9 @@ export async function GET(req: NextRequest) {
     const type = searchParams.get("type") as SoftwareType | null;
 
     const softwares = await prisma.software.findMany({
-      where: type ? { type } : undefined,
+      where: { deletedAt: null, ...(type ? { type } : {}) },
       include: {
-        _count: { select: { contracts: true } },
+        _count: { select: { contracts: { where: { deletedAt: null } } } },
       },
       orderBy: { createdAt: "desc" },
     });

@@ -42,9 +42,10 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   try {
     const clients = await prisma.client.findMany({
+      where: { deletedAt: null },
       include: {
         _count: {
-          select: { contracts: { where: { active: true } } },
+          select: { contracts: { where: { active: true, deletedAt: null } } },
         },
       },
       orderBy: { createdAt: "desc" },

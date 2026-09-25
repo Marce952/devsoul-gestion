@@ -14,7 +14,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params;
     const body: UpdateSoftwareBody = await req.json();
 
-    const existing = await prisma.software.findUnique({ where: { id } });
+    const existing = await prisma.software.findFirst({ where: { id, deletedAt: null } });
     if (!existing) {
       return NextResponse.json({ error: "Software no encontrado" }, { status: 404 });
     }
@@ -40,12 +40,22 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params;
 
-    const existing = await prisma.software.findUnique({ where: { id } });
+    const existing = await prisma.software.findFirst({ where: { id, deletedAt: null } });
     if (!existing) {
       return NextResponse.json({ error: "Software no encontrado" }, { status: 404 });
     }
 
-    await prisma.software.delete({ where: { id } });
+    const activeContracts = await prisma.contract.count({
+      where: { softwareId: id, active: true, deletedAt: null },
+    });
+    if (activeContracts > 0) {
+      return NextResponse.json(
+        { error: "El software tiene contratos activos. Finalizalos antes de archivarlo." },
+        { status: 409 }
+      );
+    }
+
+    await prisma.software.update({ where: { id }, data: { deletedAt: new Date() } });
 
     return new NextResponse(null, { status: 204 });
   } catch (error) {

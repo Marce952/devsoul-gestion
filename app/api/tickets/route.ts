@@ -52,8 +52,8 @@ export async function POST(req: NextRequest) {
     }
 
     const [client, software] = await Promise.all([
-      prisma.client.findUnique({ where: { id: clientId } }),
-      prisma.software.findUnique({ where: { id: softwareId } }),
+      prisma.client.findFirst({ where: { id: clientId, deletedAt: null } }),
+      prisma.software.findFirst({ where: { id: softwareId, deletedAt: null } }),
     ]);
 
     if (!client) return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });

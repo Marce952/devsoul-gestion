@@ -72,6 +72,9 @@ model Client {
   tickets     Ticket[]
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+
+  @@index([deletedAt])
 }
 
 model Software {
@@ -84,6 +87,9 @@ model Software {
   tickets     Ticket[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+
+  @@index([deletedAt])
 }
 
 model Contract {
@@ -97,10 +103,16 @@ model Contract {
   startDate   DateTime
   endDate     DateTime?
   invoices    Invoice[]
-  client      Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  software    Software     @relation(fields: [softwareId], references: [id], onDelete: Cascade)
+  client      Client       @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  software    Software     @relation(fields: [softwareId], references: [id], onDelete: Restrict)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+
+  @@index([clientId])
+  @@index([softwareId])
+  @@index([active])
+  @@index([deletedAt])
 }
 
 model Invoice {
@@ -112,9 +124,14 @@ model Invoice {
   currency    Currency
   period      String
   paymentDate DateTime?
-  contract    Contract      @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  contract    Contract      @relation(fields: [contractId], references: [id], onDelete: Restrict)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+
+  @@index([contractId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([period])
 }
 
 model Transaction {
@@ -127,6 +144,9 @@ model Transaction {
   date        DateTime
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+
+  @@index([date])
+  @@index([type])
 }
 
 model Ticket {
@@ -137,8 +157,12 @@ model Ticket {
   description String
   status      TicketStatus   @default(OPEN)
   priority    TicketPriority @default(MEDIUM)
-  client      Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  software    Software       @relation(fields: [softwareId], references: [id], onDelete: Cascade)
+  client      Client         @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  software    Software       @relation(fields: [softwareId], references: [id], onDelete: Restrict)
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
+
+  @@index([clientId])
+  @@index([softwareId])
+  @@index([status])
 }
