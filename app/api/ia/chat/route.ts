@@ -3,6 +3,8 @@ import { openai } from "@ai-sdk/openai";
 import { streamText, type CoreMessage } from "ai";
 import { PaymentStatus, TransactionType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getAccountBalances } from "@/lib/finance/balances";
+import { invoiceAmountArs } from "@/lib/finance/invoices";
 
 export const maxDuration = 30;
 
@@ -13,32 +15,35 @@ export async function POST(req: NextRequest) {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [ingresoAgg, egresoAgg, pendingAgg, allInvoices] = await Promise.all([
+    const [ingresoAgg, egresoAgg, pendingInvoices, allInvoices, balances] = await Promise.all([
       prisma.transaction.aggregate({
-        _sum: { amount: true },
+        _sum: { amountArs: true },
         where: { type: TransactionType.INCOME, date: { gte: startOfMonth } },
       }),
       prisma.transaction.aggregate({
-        _sum: { amount: true },
+        _sum: { amountArs: true },
         where: { type: TransactionType.EXPENSE, date: { gte: startOfMonth } },
       }),
-      prisma.invoice.aggregate({
-        _sum: { amount: true },
-        _count: { id: true },
+      prisma.invoice.findMany({
+        select: { amount: true, currency: true, rateToArs: true },
         where: { status: PaymentStatus.PENDING },
       }),
       prisma.invoice.findMany({
         select: {
           amount: true,
+          currency: true,
+          rateToArs: true,
           contract: { select: { software: { select: { name: true } } } },
         },
       }),
+      getAccountBalances(),
     ]);
 
+    const usdRate = balances.usdRate;
     const softwareMap = new Map<string, number>();
     for (const inv of allInvoices) {
       const name = inv.contract.software.name;
-      softwareMap.set(name, (softwareMap.get(name) ?? 0) + Number(inv.amount));
+      softwareMap.set(name, (softwareMap.get(name) ?? 0) + invoiceAmountArs(inv, usdRate));
     }
     const top3 = Array.from(softwareMap.entries())
       .sort(([, a], [, b]) => b - a)
@@ -52,10 +57,15 @@ export async function POST(req: NextRequest) {
         maximumFractionDigits: 0,
       }).format(n);
 
-    const ingresos = Number(ingresoAgg._sum.amount ?? 0);
-    const egresos = Number(egresoAgg._sum.amount ?? 0);
-    const pending = Number(pendingAgg._sum.amount ?? 0);
-    const pendingN = pendingAgg._count.id;
+    const ingresos = Number(ingresoAgg._sum.amountArs ?? 0);
+    const egresos = Number(egresoAgg._sum.amountArs ?? 0);
+    const pending = pendingInvoices.reduce((acc, inv) => acc + invoiceAmountArs(inv, usdRate), 0);
+    const pendingN = pendingInvoices.length;
+    const accountLines = balances.accounts.length
+      ? balances.accounts
+          .map((a) => `  - ${a.name}: ${a.balance.toLocaleString("es-AR")} ${a.currency}${a.currency === "ARS" ? "" : ` (≈ ${fmt(a.balanceArs ?? 0)})`}`)
+          .join("\n")
+      : "  (Sin cuentas registradas)";
 
     const topLines = top3.length
       ? top3.map(([name, total], i) => `  ${i + 1}. ${name}: ${fmt(total)}`).join("\n")
@@ -64,7 +74,10 @@ export async function POST(req: NextRequest) {
     const systemPrompt = `Sos el asistente financiero interno de Devsoul, una startup de desarrollo de software.
 Tu rol es ayudar a los socios a tomar decisiones de negocio con base en datos reales.
 
-Contexto financiero actual (${mes}):
+Contexto financiero actual (${mes}, montos consolidados en ARS${usdRate ? ` con dólar ${fmt(usdRate)}` : ""}):
+- Liquidez total: ${fmt(balances.totalArs)}
+- Saldos por cuenta:
+${accountLines}
 - Ingresos del mes: ${fmt(ingresos)}
 - Egresos del mes: ${fmt(egresos)}
 - Balance neto del mes: ${fmt(ingresos - egresos)}

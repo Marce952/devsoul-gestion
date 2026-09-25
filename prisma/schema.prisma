@@ -49,16 +49,39 @@ enum TicketPriority {
 enum TransactionType {
   INCOME
   EXPENSE
+  TRANSFER_IN
+  TRANSFER_OUT
+}
+
+enum AccountProvider {
+  UALA
+  BANK
+  CASH
+  OTHER
+}
+
+enum TransactionSource {
+  MANUAL
+  INVOICE
+  TRANSFER
+  UALA_IMPORT
+  UALA_WEBHOOK
+}
+
+enum RateSource {
+  MANUAL
+  API
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String
-  role      Role
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String        @id @default(cuid())
+  email        String        @unique
+  password     String
+  name         String
+  role         Role
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 }
 
 model Client {
@@ -124,6 +147,8 @@ model Invoice {
   currency    Currency
   period      String
   paymentDate DateTime?
+  rateToArs   Decimal?      @db.Decimal(14, 4)
+  transaction Transaction?
   contract    Contract      @relation(fields: [contractId], references: [id], onDelete: Restrict)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
@@ -134,19 +159,72 @@ model Invoice {
   @@index([period])
 }
 
+model FinancialAccount {
+  id             String          @id @default(cuid())
+  name           String          @unique
+  provider       AccountProvider
+  currency       Currency
+  openingBalance Decimal         @default(0) @db.Decimal(14, 2)
+  openingDate    DateTime
+  active         Boolean         @default(true)
+  transactions   Transaction[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model TransactionCategory {
+  id           String          @id @default(cuid())
+  name         String
+  type         TransactionType
+  active       Boolean         @default(true)
+  transactions Transaction[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@unique([name, type])
+}
+
+model ExchangeRate {
+  id        String     @id @default(cuid())
+  date      DateTime   @db.Date
+  currency  Currency
+  rateToArs Decimal    @db.Decimal(14, 4)
+  source    RateSource
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([currency, date])
+}
+
 model Transaction {
-  id          String          @id @default(cuid())
-  type        TransactionType
-  category    String
-  amount      Decimal         @db.Decimal(12, 2)
-  currency    Currency
-  description String?
-  date        DateTime
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id              String               @id @default(cuid())
+  type            TransactionType
+  accountId       String
+  categoryId      String?
+  amount          Decimal              @db.Decimal(12, 2)
+  currency        Currency
+  rateToArs       Decimal              @default(1) @db.Decimal(14, 4)
+  amountArs       Decimal              @db.Decimal(14, 2)
+  description     String?
+  date            DateTime
+  source          TransactionSource    @default(MANUAL)
+  reconciled      Boolean              @default(false)
+  invoiceId       String?              @unique
+  externalId      String?              @unique
+  transferGroupId String?
+  createdById     String?
+  account         FinancialAccount     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category        TransactionCategory? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  invoice         Invoice?             @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  createdBy       User?                @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 
   @@index([date])
   @@index([type])
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([transferGroupId])
 }
 
 model Ticket {

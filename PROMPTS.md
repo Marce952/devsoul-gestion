@@ -30,7 +30,7 @@ Este archivo es el backlog vivo del sistema. Cada bloque trae un prompt listo pa
 ### P0.1: Índices, soft-delete y protección contable
 - **Estado:** [x]
 - **Depende de:** nada
-- **Fecha:** 25/09/2026 · **Commit:** (pendiente) · **Notas:** Migración `20260925150353_soft_delete_indexes_restrict`.
+- **Fecha:** 25/09/2026 · **Commit:** `45df90b` · **Notas:** Migración `20260925150353_soft_delete_indexes_restrict`.
   - Todas las FKs pasaron a `Restrict`, así que la base rechaza el borrado físico de un registro que tenga dependencias.
   - `DELETE` de clientes y softwares hace soft-delete, pero responde 409 si tienen contratos activos.
   - Nuevo `DELETE /api/contracts/[id]`: responde 409 si el contrato tiene facturas `PENDING`.
@@ -50,10 +50,10 @@ Verificá con npm run build y npm run lint.
 ### P0.2: Seed inicial
 - **Estado:** [~]
 - **Depende de:** P0.1
-- **Fecha:** 25/09/2026 · **Commit:** (pendiente) · **Notas:**
+- **Fecha:** 25/09/2026 · **Commit:** `45df90b` · **Notas:**
   - `prisma/seed.ts` se ejecuta con tsx, configurado en `prisma.config.ts`, y crea 2 OWNER: Marce (garridomarcex@gmail.com) y Lautaro (lautarooyt837@gmail.com).
   - Las contraseñas salen de `SEED_PASSWORD_MARCE` y `SEED_PASSWORD_LAUTARO`. Si un usuario ya existe, el seed no pisa su contraseña.
-  - Falta: categorías de transacciones y cuenta "Ualá ARS". Se suman al seed cuando exista el modelo de P2.1.
+  - Desde P2.1 el seed también crea las categorías base y la cuenta "Ualá ARS".
   - Falta que los socios carguen sus contraseñas en `.env` y ejecuten `npx prisma db seed`.
 
 ```
@@ -71,7 +71,7 @@ Tiene que ser idempotente (upsert). Documentá el comando en README.md.
 ### P1.1: Login con roles
 - **Estado:** [x]
 - **Depende de:** P0.2
-- **Fecha:** 25/09/2026 · **Commit:** (pendiente) · **Notas:**
+- **Fecha:** 25/09/2026 · **Commit:** `45df90b` · **Notas:**
   - Sesión stateless: JWT HS256 con `jose` en la cookie httpOnly `devsoul_session`, válida por 7 días. Las contraseñas se hashean con `bcryptjs` (costo 12).
   - `proxy.ts` (el middleware de Next 16) protege todo salvo `/login`, `/api/auth/*` y `/api/webhooks/*`: la API responde 401 y las páginas redirigen a `/login?from=`.
   - `lib/auth/session.ts` expone `getSession`, `getCurrentUser`, `requireUser` y `requireRole(roles)`. `FINANCIAL_ROLES` (OWNER y FINANCIAL) protege `PATCH /api/invoices/[id]` y `POST /api/transactions`.
@@ -95,9 +95,23 @@ Implementá autenticación con email y contraseña sobre el modelo User existent
 ## Fase 2: Registro contable (núcleo del pedido)
 
 ### P2.1: Cuentas financieras, categorías y saldos
-- **Estado:** [ ]
+- **Estado:** [x]
 - **Depende de:** P0.1
-- **Fecha:** · **Commit:** · **Notas:**
+- **Fecha:** 25/09/2026 · **Commit:** (pendiente) · **Notas:** Migración `20260925180000_finance_accounts_categories_rates`, escrita a mano porque migra datos.
+  - Los movimientos existentes pasaron a "Ualá ARS". Las categorías se crearon a partir del texto que tenían, y los cobros automáticos quedaron vinculados a su factura.
+  - Transferencias: no hay un modelo aparte. Se agregaron los tipos `TRANSFER_IN` y `TRANSFER_OUT`, y las dos patas comparten `transferGroupId`. No cuentan como ingreso ni egreso y admiten monedas distintas (compra de USD).
+  - APIs nuevas:
+    - `/api/accounts`: devuelve los saldos calculados.
+    - `/api/categories`
+    - `/api/transfers`
+    - `DELETE /api/transactions/[id]`: solo MANUAL o TRANSFER, y en una transferencia borra las dos patas.
+  - `PATCH /api/invoices/[id]` ahora exige `accountId`. Acepta `paymentDate`, y `amountReceived` cuando la moneda de la cuenta difiere de la de la factura. Es idempotente frente a dobles cobros.
+  - UI:
+    - `/dashboard/finanzas`: saldos por cuenta, liquidez total, filtros por tipo, cuenta, categoría y mes, y modales de movimiento y transferencia.
+    - `/dashboard/finanzas/configuracion`: cuentas, categorías y cotización.
+    - Facturación: modal de cobro con cuenta destino.
+  - Utilidades nuevas: `lib/hooks/use-json.ts` (sin setState en effects, lo que resolvió los 2 errores de lint), `components/form-modal.tsx` y `lib/format.ts`.
+  - Probado end-to-end con datos de prueba (ya borrados): saldos, cotización histórica, transferencia ARS→USD, cobros, validaciones y bloqueo de doble cobro. La UI no se revisó visualmente en el navegador.
 
 ```
 Quiero un registro contable real de dónde está el dinero de Devsoul (hoy todo está en Ualá).
@@ -112,9 +126,20 @@ Verificá con build y lint.
 ```
 
 ### P2.2: Tipo de cambio USD
-- **Estado:** [ ]
+- **Estado:** [x]
 - **Depende de:** P2.1
-- **Fecha:** · **Commit:** · **Notas:**
+- **Fecha:** 25/09/2026 · **Commit:** (pendiente) · **Notas:**
+  - Modelo `ExchangeRate`, único por (currency, date).
+  - `getRateToArs` en `lib/finance/rates.ts` resuelve en este orden:
+    1. La base de datos.
+    2. dolarapi.com para el día de hoy.
+    3. argentinadatos.com para fechas pasadas, retrocediendo hasta 7 días por fines de semana.
+    4. La última cotización guardada.
+    5. Si no hay ninguna, responde 422 y pide cargarla a mano.
+  - Qué dólar se usa se configura con `EXCHANGE_RATE_CASA` (por defecto `oficial`, venta).
+  - `Transaction` guarda `rateToArs` y `amountArs`. `Invoice.rateToArs` se fija al cobrarla; las facturas pendientes en USD se valúan con la cotización actual (`lib/finance/invoices.ts`).
+  - Consolidado en ARS: el resumen de `/api/transactions`, `/api/dashboard/metrics` (que suma `cotizacionUsd`) y el prompt de la IA, que ahora incluye la liquidez total y el saldo de cada cuenta.
+  - `POST /api/exchange-rates` permite cargar o corregir una cotización a mano.
 
 ```
 Agregá el modelo ExchangeRate (date, currency, rateToArs y source: MANUAL o API) y guardá en cada Transaction e Invoice en USD el rateToArs usado.

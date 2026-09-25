@@ -1,6 +1,6 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
-import { PrismaClient, Role } from "@prisma/client";
+import { AccountProvider, Currency, PrismaClient, Role, TransactionType } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -8,6 +8,22 @@ const PARTNERS = [
   { name: "Marce", email: "garridomarcex@gmail.com", role: Role.OWNER, passwordEnv: "SEED_PASSWORD_MARCE" },
   { name: "Lautaro", email: "lautarooyt837@gmail.com", role: Role.OWNER, passwordEnv: "SEED_PASSWORD_LAUTARO" },
 ];
+
+const CATEGORIES: Record<"INCOME" | "EXPENSE", string[]> = {
+  INCOME: ["Factura cobrada", "Otros ingresos"],
+  EXPENSE: [
+    "Sueldos",
+    "Infraestructura",
+    "Impuestos",
+    "Herramientas/SaaS",
+    "Comisiones bancarias",
+    "Marketing",
+    "Servicios",
+    "Otros egresos",
+  ],
+};
+
+const ACCOUNTS = [{ name: "Ualá ARS", provider: AccountProvider.UALA, currency: Currency.ARS }];
 
 async function seedUsers() {
   for (const partner of PARTNERS) {
@@ -39,7 +55,37 @@ async function seedUsers() {
   }
 }
 
-seedUsers()
+async function seedCategories() {
+  for (const [type, names] of Object.entries(CATEGORIES) as [TransactionType, string[]][]) {
+    for (const name of names) {
+      await prisma.transactionCategory.upsert({
+        where: { name_type: { name, type } },
+        create: { name, type },
+        update: {},
+      });
+    }
+  }
+  console.log("✔ Categorías de movimientos");
+}
+
+async function seedAccounts() {
+  for (const account of ACCOUNTS) {
+    await prisma.financialAccount.upsert({
+      where: { name: account.name },
+      create: { ...account, openingBalance: 0, openingDate: new Date() },
+      update: {},
+    });
+  }
+  console.log("✔ Cuentas financieras");
+}
+
+async function main() {
+  await seedCategories();
+  await seedAccounts();
+  await seedUsers();
+}
+
+main()
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;

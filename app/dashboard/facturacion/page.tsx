@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { Chip } from "@heroui/react/chip";
 import { Input } from "@heroui/react/input";
 import { Button } from "@heroui/react/button";
 import { Modal } from "@heroui/react";
 import { CheckCircle, FileText, Plus } from "lucide-react";
+import { useJson } from "@/lib/hooks/use-json";
+import type { AccountsResponse } from "../finanzas/types";
+import { PayInvoiceModal, type PayableInvoice } from "./pay-invoice-modal";
 
 type InvoiceRow = {
   id: string;
@@ -87,48 +90,42 @@ const EMPTY_FORM: FormState = {
 };
 
 export default function FacturacionPage() {
-  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [loadingMore, setLoadingMore] = useState(false);
-
   const [statusFilter, setStatusFilter] = useState("");
   const [periodFilter, setPeriodFilter] = useState("");
-  const [marking, setMarking] = useState<string | null>(null);
+  const [paying, setPaying] = useState<PayableInvoice | null>(null);
+  const [more, setMore] = useState<{ key: string; page: number; rows: InvoiceRow[] }>({
+    key: "",
+    page: 1,
+    rows: [],
+  });
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [contracts, setContracts] = useState<ContractOption[]>([]);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const buildUrl = useCallback(
-    (p: number) => {
-      const params = new URLSearchParams();
-      if (statusFilter) params.set("status", statusFilter);
-      if (periodFilter) params.set("period", periodFilter);
-      params.set("page", String(p));
-      params.set("limit", "20");
-      return `/api/invoices?${params.toString()}`;
-    },
-    [statusFilter, periodFilter]
-  );
+  const buildUrl = (p: number) => {
+    const params = new URLSearchParams();
+    if (statusFilter) params.set("status", statusFilter);
+    if (periodFilter) params.set("period", periodFilter);
+    params.set("page", String(p));
+    params.set("limit", "20");
+    return `/api/invoices?${params.toString()}`;
+  };
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(buildUrl(1));
-      const json: ApiResponse = await res.json();
-      setInvoices(json.data);
-      setTotal(json.total);
-      setPage(1);
-      setTotalPages(json.totalPages);
-    } finally {
-      setLoading(false);
-    }
-  }, [buildUrl]);
+  const invoicesQ = useJson<ApiResponse>(buildUrl(1));
+  const contractsQ = useJson<ContractOption[]>("/api/contracts?active=true");
+  const accountsQ = useJson<AccountsResponse>("/api/accounts");
+
+  const extra = more.key === invoicesQ.key ? more : { page: 1, rows: [] };
+  const invoices = [...(invoicesQ.data?.data ?? []), ...extra.rows];
+  const loading = invoicesQ.loading && !invoicesQ.data;
+  const total = invoicesQ.data?.total ?? 0;
+  const page = extra.page;
+  const totalPages = invoicesQ.data?.totalPages ?? 1;
+  const contracts = Array.isArray(contractsQ.data) ? contractsQ.data : [];
+  const accounts = accountsQ.data?.accounts ?? [];
 
   const loadMore = async () => {
     const nextPage = page + 1;
@@ -136,23 +133,11 @@ export default function FacturacionPage() {
     try {
       const res = await fetch(buildUrl(nextPage));
       const json: ApiResponse = await res.json();
-      setInvoices((prev) => [...prev, ...json.data]);
-      setPage(nextPage);
-      setTotalPages(json.totalPages);
+      setMore({ key: invoicesQ.key, page: nextPage, rows: [...extra.rows, ...(json.data ?? [])] });
     } finally {
       setLoadingMore(false);
     }
   };
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    fetch("/api/contracts?active=true")
-      .then((r) => r.json())
-      .then((data) => setContracts(Array.isArray(data) ? data : []));
-  }, []);
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -198,24 +183,9 @@ export default function FacturacionPage() {
         return;
       }
       setModalOpen(false);
-      load();
+      invoicesQ.reload();
     } finally {
       setSaving(false);
-    }
-  };
-
-  const markPaid = async (id: string) => {
-    setMarking(id);
-    try {
-      const res = await fetch(`/api/invoices/${id}`, { method: "PATCH" });
-      if (!res.ok) return;
-      setInvoices((prev) =>
-        prev.map((inv) =>
-          inv.id === id ? { ...inv, status: "PAID", paymentDate: new Date().toISOString() } : inv
-        )
-      );
-    } finally {
-      setMarking(null);
     }
   };
 
@@ -343,9 +313,16 @@ export default function FacturacionPage() {
                   <div className="flex justify-end md:justify-center">
                     {inv.status === "PENDING" && (
                       <button
-                        onClick={() => markPaid(inv.id)}
-                        disabled={marking === inv.id}
-                        title="Marcar como cobrada"
+                        onClick={() =>
+                          setPaying({
+                            id: inv.id,
+                            amount: inv.amount,
+                            currency: inv.currency,
+                            period: inv.period,
+                            clientName: inv.contract.client.companyName,
+                          })
+                        }
+                        title="Registrar cobro"
                         className="text-acento-lima hover:text-acento-lima/70 transition-colors disabled:opacity-40"
                       >
                         <CheckCircle size={18} />
@@ -482,6 +459,13 @@ export default function FacturacionPage() {
           </Modal.Container>
         </Modal.Backdrop>
       </Modal>
+
+      <PayInvoiceModal
+        invoice={paying}
+        accounts={accounts}
+        onClose={() => setPaying(null)}
+        onPaid={invoicesQ.reload}
+      />
     </div>
   );
 }

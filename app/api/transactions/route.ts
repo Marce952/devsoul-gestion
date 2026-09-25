@@ -1,56 +1,73 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Currency, TransactionType } from "@prisma/client";
+import { Prisma, TransactionType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { FINANCIAL_ROLES, requireRole } from "@/lib/auth/session";
+import { buildLedgerEntry, parseAmount, parseDate } from "@/lib/finance/ledger";
+import { RateUnavailableError } from "@/lib/finance/rates";
 
 type CreateTransactionBody = {
   type: TransactionType;
-  category: string;
+  accountId: string;
+  categoryId: string;
   amount: number;
-  currency: Currency;
   description?: string;
   date: string;
 };
 
+const MANUAL_TYPES: TransactionType[] = [TransactionType.INCOME, TransactionType.EXPENSE];
+
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const type = searchParams.get("type") as TransactionType | null;
+    const { searchParams } = req.nextUrl;
+    const type = searchParams.get("type");
     const month = searchParams.get("month");
+    const accountId = searchParams.get("accountId");
+    const categoryId = searchParams.get("categoryId");
     const page = Math.max(1, parseInt(searchParams.get("page") ?? "1"));
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "20")));
     const skip = (page - 1) * limit;
 
-    let dateFilter = {};
+    let dateFilter: Prisma.TransactionWhereInput = {};
     if (month) {
       const [y, m] = month.split("-").map(Number);
       if (y && m) {
-        dateFilter = { date: { gte: new Date(y, m - 1, 1), lt: new Date(y, m, 1) } };
+        dateFilter = { date: { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) } };
       }
     }
 
-    const where = {
-      ...(type && Object.values(TransactionType).includes(type) ? { type } : {}),
+    const typeFilter: Prisma.TransactionWhereInput =
+      type === "TRANSFER"
+        ? { type: { in: [TransactionType.TRANSFER_IN, TransactionType.TRANSFER_OUT] } }
+        : type && Object.values(TransactionType).includes(type as TransactionType)
+          ? { type: type as TransactionType }
+          : {};
+
+    const where: Prisma.TransactionWhereInput = {
+      ...typeFilter,
       ...dateFilter,
+      ...(accountId ? { accountId } : {}),
+      ...(categoryId ? { categoryId } : {}),
     };
 
     const [data, total, sums] = await Promise.all([
       prisma.transaction.findMany({
         where,
-        orderBy: { date: "desc" },
+        include: {
+          account: { select: { id: true, name: true, currency: true } },
+          category: { select: { id: true, name: true } },
+          invoice: { select: { id: true, period: true } },
+        },
+        orderBy: [{ date: "desc" }, { createdAt: "desc" }],
         skip,
         take: limit,
       }),
       prisma.transaction.count({ where }),
-      prisma.transaction.groupBy({
-        by: ["type"],
-        where,
-        _sum: { amount: true },
-      }),
+      prisma.transaction.groupBy({ by: ["type"], where, _sum: { amountArs: true } }),
     ]);
 
-    const income = Number(sums.find((s) => s.type === TransactionType.INCOME)?._sum.amount ?? 0);
-    const expense = Number(sums.find((s) => s.type === TransactionType.EXPENSE)?._sum.amount ?? 0);
+    const sumOf = (t: TransactionType) => Number(sums.find((s) => s.type === t)?._sum.amountArs ?? 0);
+    const income = sumOf(TransactionType.INCOME);
+    const expense = sumOf(TransactionType.EXPENSE);
 
     return NextResponse.json({
       data,
@@ -71,37 +88,44 @@ export async function POST(req: NextRequest) {
     if (!auth.ok) return auth.response;
 
     const body: CreateTransactionBody = await req.json();
-    const { type, category, amount, currency, description, date } = body;
+    const amount = parseAmount(body.amount);
+    const date = parseDate(body.date);
 
-    if (!type || !category || amount === undefined || !currency || !date) {
-      return NextResponse.json({ error: "Faltan campos requeridos" }, { status: 400 });
+    if (!MANUAL_TYPES.includes(body.type)) {
+      return NextResponse.json({ error: "Tipo inválido (INCOME o EXPENSE)" }, { status: 400 });
+    }
+    if (!body.accountId || !body.categoryId || !amount || !date) {
+      return NextResponse.json({ error: "Faltan campos requeridos o son inválidos" }, { status: 400 });
     }
 
-    if (!Object.values(TransactionType).includes(type)) {
-      return NextResponse.json({ error: "Tipo de transacción inválido" }, { status: 400 });
-    }
+    const [account, category] = await Promise.all([
+      prisma.financialAccount.findFirst({ where: { id: body.accountId, active: true } }),
+      prisma.transactionCategory.findFirst({ where: { id: body.categoryId, active: true } }),
+    ]);
 
-    if (!Object.values(Currency).includes(currency)) {
-      return NextResponse.json({ error: "Moneda inválida" }, { status: 400 });
-    }
-
-    if (Number(amount) <= 0) {
-      return NextResponse.json({ error: "El monto debe ser mayor a cero" }, { status: 400 });
+    if (!account) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
+    if (!category) return NextResponse.json({ error: "Categoría no encontrada" }, { status: 404 });
+    if (category.type !== body.type) {
+      return NextResponse.json({ error: "La categoría no corresponde al tipo de movimiento" }, { status: 400 });
     }
 
     const transaction = await prisma.transaction.create({
-      data: {
-        type,
-        category,
+      data: await buildLedgerEntry({
+        account,
+        type: body.type,
         amount,
-        currency,
-        description: description || undefined,
-        date: new Date(date),
-      },
+        date,
+        categoryId: category.id,
+        description: body.description?.trim(),
+        createdById: auth.session.userId,
+      }),
     });
 
     return NextResponse.json(transaction, { status: 201 });
   } catch (error) {
+    if (error instanceof RateUnavailableError) {
+      return NextResponse.json({ error: error.message }, { status: 422 });
+    }
     console.error("[POST /api/transactions]", error);
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
   }
