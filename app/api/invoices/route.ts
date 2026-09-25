@@ -84,6 +84,11 @@ export async function GET(req: NextRequest) {
               software: { select: { id: true, name: true } },
             },
           },
+          reminders: {
+            where: { status: "SENT" },
+            select: { kind: true, sentAt: true },
+            orderBy: { sentAt: "desc" },
+          },
         },
         orderBy: [{ status: "asc" }, { dueDate: "asc" }],
         skip,

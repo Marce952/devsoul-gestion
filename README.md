@@ -15,6 +15,9 @@ Sistema de gestión interna de Devsoul: clientes, softwares, contratos, facturac
    - `SESSION_SECRET`: 32 caracteres o más, para firmar la cookie de sesión.
    - `SEED_PASSWORD_MARCE` y `SEED_PASSWORD_LAUTARO`: contraseñas iniciales de los socios, de 8 caracteres o más.
    - `EXCHANGE_RATE_CASA` (opcional): qué dólar usar para consolidar en ARS. Por defecto `oficial`; también acepta `bolsa` (MEP) o `blue`.
+   - `CRON_SECRET`: 16 caracteres o más. Protege los endpoints `/api/cron/*`.
+   - `RESEND_API_KEY`, `EMAIL_FROM` y `EMAIL_REPLY_TO` (opcional): para los recordatorios por email.
+   - `INVOICE_DUE_DAY`, `REMINDER_DAYS_BEFORE` y `REMINDER_DAYS_AFTER` (opcionales): por defecto 10, 3 y 7.
    - `OPENAI_API_KEY`: para el chat de IA.
 
 3. Aplicar las migraciones y cargar los datos iniciales:
@@ -40,6 +43,30 @@ Sistema de gestión interna de Devsoul: clientes, softwares, contratos, facturac
 - **Movimientos**: cada ingreso o egreso pertenece a una cuenta y a una categoría. Al marcar una factura como cobrada se crea el ingreso automáticamente en la cuenta que elijas.
 - **Transferencias**: mueven dinero entre cuentas, incluso de ARS a USD. No cuentan como ingreso ni egreso.
 - **USD**: cada movimiento en dólares guarda la cotización del día, que se obtiene de una API pública o se carga a mano. Todos los reportes se consolidan en ARS.
+
+## Automatizaciones (Vercel Cron)
+
+`vercel.json` programa dos tareas diarias. En el plan Hobby, Vercel puede ejecutarlas en cualquier momento dentro de la hora indicada.
+
+| Endpoint | Horario (UTC) | Qué hace |
+| --- | --- | --- |
+| `/api/cron/invoices` | 10:00 (7:00 ART) | Genera la factura del mes de cada contrato SaaS o de mantenimiento activo que no tenga una. Es idempotente, así que correrlo todos los días recupera las ejecuciones perdidas. |
+| `/api/cron/reminders` | 12:00 (9:00 ART) | Envía por email los recordatorios de facturas pendientes: 3 días antes del vencimiento, el día del vencimiento y 7 días después. Cada uno sale una sola vez por factura y los fallos se reintentan hasta 5 veces. |
+
+Para ponerlo en marcha en Vercel:
+1. Cargar `CRON_SECRET`, `RESEND_API_KEY` y `EMAIL_FROM` en *Project Settings → Environment Variables*.
+2. En Resend, verificar el dominio que se usa en `EMAIL_FROM`.
+
+Desde **Facturación → Automatizaciones**:
+- Generar a mano las facturas de un período (solo `OWNER`).
+- Ver qué recordatorios salen hoy y previsualizar cada email.
+- Forzar el envío.
+
+Para probar localmente:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/invoices
+```
 
 ## Roles
 

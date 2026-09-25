@@ -190,9 +190,18 @@ Leé la documentación de https://developers.ualabis.com.ar (API Cobros Online v
 ## Fase 4: Automatización
 
 ### P4.1: Facturación recurrente automática
-- **Estado:** [ ]
+- **Estado:** [x]
 - **Depende de:** P0.1
-- **Fecha:** · **Commit:** · **Notas:**
+- **Fecha:** 25/09/2026 · **Commit:** (pendiente) · **Notas:** Deploy decidido: Vercel. Migración `20260925200000_recurring_invoices_reminders`.
+  - Idempotencia: no hay `@@unique([contractId, period])`, porque impediría cargar a mano una factura extra en el mismo mes. En su lugar, `Invoice.recurringKey` (`contractId:period`) es único, y el generador omite los contratos que ya tienen cualquier factura en ese período.
+  - `lib/billing/recurring.ts` incluye contratos SAAS_SUBSCRIPTION y MAINTENANCE activos, no archivados, iniciados antes de fin de mes y sin `endDate` anterior al período. El monto es `totalAmount`, que es la cuota mensual.
+  - El vencimiento es el día `INVOICE_DUE_DAY` (10 por defecto). Si la generación corre después de ese día, la factura vence a hoy + 7 días, para no nacer vencida.
+  - Los períodos y el "hoy" se calculan en hora argentina (`lib/dates.ts`).
+  - Endpoints:
+    - `GET /api/cron/invoices`: protegido por `CRON_SECRET` con comparación timing-safe. En `proxy.ts` se excluyó `/api/cron/` del chequeo de sesión.
+    - `POST /api/invoices/generate {period}`: solo OWNER.
+  - `vercel.json` programa los crons todos los días. La UI está en Facturación → Automatizaciones, y cada factura generada automáticamente muestra un ícono ↻.
+  - Pendiente: cuando exista P3.2, generar el link de pago al crear la factura.
 
 ```
 Creá un job que el día 1 de cada mes genere las Invoice PENDING de cada Contract activo de tipo SAAS_SUBSCRIPTION o MAINTENANCE para el período YYYY-MM:
@@ -206,9 +215,29 @@ Si P3.2 ya está hecho, generar el link de pago de Ualá Bis automáticamente.
 ```
 
 ### P4.2: Recordatorios de vencimiento
-- **Estado:** [ ]
+- **Estado:** [x]
 - **Depende de:** P4.1
-- **Fecha:** · **Commit:** · **Notas:**
+- **Fecha:** 25/09/2026 · **Commit:** (pendiente) · **Notas:** Proveedor decidido: Resend, con `fetch` directo y sin SDK.
+  - `ReminderLog` es único por (invoiceId, kind, channel) y guarda estado, reintentos y el id del proveedor.
+  - Tipos de recordatorio:
+    - `BEFORE_DUE`: desde `REMINDER_DAYS_BEFORE` (3) días antes del vencimiento.
+    - `DUE_DAY`: entre el día del vencimiento y el día +6.
+    - `OVERDUE`: desde `REMINDER_DAYS_AFTER` (7) días después.
+  - En cada corrida se manda solo el tipo que corresponde a ese día, y si una corrida se pierde se recupera en la siguiente.
+  - Contra envíos duplicados: la fila se reclama antes de enviar (una en PENDING por más de 1 h se puede volver a reclamar) y se manda `Idempotency-Key` a Resend. Hasta 5 intentos; los FAILED se reintentan en la corrida siguiente.
+  - Canales: interfaz `Notifier` en `lib/notifications/index.ts`. El enum `NotificationChannel` ya incluye WHATSAPP, así que alcanza con registrar un notifier nuevo.
+  - La plantilla HTML de marca está en `lib/billing/reminder-template.ts`, con escape de HTML y versión en texto plano, y ya admite `paymentUrl` para P3.2.
+  - Endpoints:
+    - `GET /api/cron/reminders`
+    - `GET /api/reminders`: dry run de lo que sale hoy.
+    - `POST /api/reminders`: envío manual, solo OWNER.
+    - `GET /api/reminders/preview?invoiceId=&kind=`: muestra el HTML del email.
+  - Probado con fixtures, ya borrados:
+    - Tipos de recordatorio correctos; las facturas pagadas y las que vencen dentro de 10 días quedan afuera.
+    - Sin configuración: 503 y no se registra nada.
+    - Con una key inválida: queda FAILED con el error de Resend y se reintenta (attempts 2).
+  - No probado: un envío real exitoso (falta la cuenta de Resend y un dominio verificado).
+  - Nota: los textos de la UI dicen "3 días antes / 7 después" fijos; si se cambian las variables de entorno, hay que actualizarlos.
 
 ```
 Enviar recordatorios por email (Resend o SMTP; proponé uno) 3 días antes del vencimiento, el día del vencimiento y 7 días después, incluyendo el link de pago si existe.

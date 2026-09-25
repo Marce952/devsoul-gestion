@@ -5,10 +5,11 @@ import { Chip } from "@heroui/react/chip";
 import { Input } from "@heroui/react/input";
 import { Button } from "@heroui/react/button";
 import { Modal } from "@heroui/react";
-import { CheckCircle, FileText, Plus } from "lucide-react";
+import { Bell, CheckCircle, FileText, Plus, Repeat, Zap } from "lucide-react";
 import { useJson } from "@/lib/hooks/use-json";
 import type { AccountsResponse } from "../finanzas/types";
 import { PayInvoiceModal, type PayableInvoice } from "./pay-invoice-modal";
+import { AutomationModal } from "./automation-modal";
 
 type InvoiceRow = {
   id: string;
@@ -18,6 +19,8 @@ type InvoiceRow = {
   currency: "ARS" | "USD";
   period: string;
   paymentDate: string | null;
+  recurringKey: string | null;
+  reminders: { kind: string; sentAt: string }[];
   contract: {
     client: { id: string; companyName: string };
     software: { id: string; name: string };
@@ -93,6 +96,7 @@ export default function FacturacionPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [periodFilter, setPeriodFilter] = useState("");
   const [paying, setPaying] = useState<PayableInvoice | null>(null);
+  const [automationOpen, setAutomationOpen] = useState(false);
   const [more, setMore] = useState<{ key: string; page: number; rows: InvoiceRow[] }>({
     key: "",
     page: 1,
@@ -201,6 +205,14 @@ export default function FacturacionPage() {
           <span className="text-sm text-white/40 hidden sm:inline">
             {total} factura{total !== 1 ? "s" : ""}
           </span>
+          <button
+            onClick={() => setAutomationOpen(true)}
+            title="Automatizaciones"
+            className="flex items-center gap-1.5 text-sm text-white/80 border border-white/10 rounded-lg px-3 py-2 hover:bg-white/5 transition-colors"
+          >
+            <Zap size={15} className="text-acento-lima" />
+            <span className="hidden sm:inline">Automatizaciones</span>
+          </button>
           <Button
             onPress={openCreate}
             className="bg-acento-lima text-black font-medium text-sm px-4 rounded-lg flex-shrink-0"
@@ -279,7 +291,21 @@ export default function FacturacionPage() {
                     <p className="text-sm font-semibold text-white truncate">
                       {inv.contract.client.companyName}
                     </p>
-                    <p className="text-xs text-white/50 truncate">{inv.contract.software.name}</p>
+                    <p className="text-xs text-white/50 truncate flex items-center gap-1.5">
+                      {inv.contract.software.name}
+                      {inv.recurringKey && (
+                        <Repeat size={11} className="text-acento-lima/70 flex-shrink-0" aria-label="Generada automáticamente" />
+                      )}
+                      {inv.reminders.length > 0 && (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-[10px] text-white/40"
+                          title={`Último recordatorio: ${formatDate(inv.reminders[0].sentAt)}`}
+                        >
+                          <Bell size={10} />
+                          {inv.reminders.length}
+                        </span>
+                      )}
+                    </p>
                   </div>
 
                   {/* Período */}
@@ -459,6 +485,12 @@ export default function FacturacionPage() {
           </Modal.Container>
         </Modal.Backdrop>
       </Modal>
+
+      <AutomationModal
+        isOpen={automationOpen}
+        onOpenChange={setAutomationOpen}
+        onChanged={invoicesQ.reload}
+      />
 
       <PayInvoiceModal
         invoice={paying}

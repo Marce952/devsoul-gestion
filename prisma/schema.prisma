@@ -73,6 +73,23 @@ enum RateSource {
   API
 }
 
+enum ReminderKind {
+  BEFORE_DUE
+  DUE_DAY
+  OVERDUE
+}
+
+enum NotificationChannel {
+  EMAIL
+  WHATSAPP
+}
+
+enum ReminderStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
 model User {
   id           String        @id @default(cuid())
   email        String        @unique
@@ -139,19 +156,21 @@ model Contract {
 }
 
 model Invoice {
-  id          String        @id @default(cuid())
-  contractId  String
-  amount      Decimal       @db.Decimal(12, 2)
-  dueDate     DateTime
-  status      PaymentStatus @default(PENDING)
-  currency    Currency
-  period      String
-  paymentDate DateTime?
-  rateToArs   Decimal?      @db.Decimal(14, 4)
-  transaction Transaction?
-  contract    Contract      @relation(fields: [contractId], references: [id], onDelete: Restrict)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id           String        @id @default(cuid())
+  contractId   String
+  amount       Decimal       @db.Decimal(12, 2)
+  dueDate      DateTime
+  status       PaymentStatus @default(PENDING)
+  currency     Currency
+  period       String
+  paymentDate  DateTime?
+  rateToArs    Decimal?      @db.Decimal(14, 4)
+  recurringKey String?       @unique
+  transaction  Transaction?
+  reminders    ReminderLog[]
+  contract     Contract      @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   @@index([contractId])
   @@index([status])
@@ -242,5 +261,24 @@ model Ticket {
 
   @@index([clientId])
   @@index([softwareId])
+  @@index([status])
+}
+
+model ReminderLog {
+  id         String              @id @default(cuid())
+  invoiceId  String
+  kind       ReminderKind
+  channel    NotificationChannel
+  status     ReminderStatus      @default(PENDING)
+  recipient  String
+  providerId String?
+  error      String?
+  attempts   Int                 @default(0)
+  sentAt     DateTime?
+  invoice    Invoice             @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  @@unique([invoiceId, kind, channel])
   @@index([status])
 }
